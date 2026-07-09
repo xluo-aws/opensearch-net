@@ -16,6 +16,7 @@ Inspired from [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Added conditions to the Microsoft.CSharp, System.Buffers & System.Diagnostics.DiagnosticSource dependencies so that they are not included on net 6+ as the newer framework's natively provides those dependencies. ([#930](https://github.com/opensearch-project/opensearch-net/pull/930))
 - Added support for Hybrid query ([#917](https://github.com/opensearch-project/opensearch-net/pull/917))
 - Added support for `MaxDistance` and `MinScore` to `KnnQuery` ([#917](https://github.com/opensearch-project/opensearch-net/pull/917))
+- Added an **experimental, transitional** `OpenSearchSerializerEngine` toggle (constructor argument or the `OPENSEARCH_NET_SERIALIZER` environment variable) to fall back from the default `System.Text.Json` serializer to the legacy Utf8Json engine as a break-glass for critical regressions. It is intended to be removed once the migration has soaked and should be treated as obsolete-from-birth. ([#388](https://github.com/opensearch-project/opensearch-net/issues/388))
 
 ### Removed
 - Removed support for the `net461` target ([#256](https://github.com/opensearch-project/opensearch-net/pull/256))
