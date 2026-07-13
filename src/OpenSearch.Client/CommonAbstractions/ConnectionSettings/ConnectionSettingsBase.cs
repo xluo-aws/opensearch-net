@@ -93,6 +93,20 @@ namespace OpenSearch.Client
 			SourceSerializerFactory sourceSerializer,
 			IPropertyMappingProvider propertyMappingProvider
 		) : base(connectionPool, connection, sourceSerializer, propertyMappingProvider) { }
+
+		/// <summary>
+		/// EXPERIMENTAL / TRANSITIONAL (see GitHub issue #388): selects the built-in serializer engine.
+		/// Use <see cref="OpenSearchSerializerEngine.Utf8Json"/> to fall back to the legacy vendored
+		/// serializer if a critical regression is found in the System.Text.Json default. This overload is
+		/// intended to be removed once the migration has soaked.
+		/// </summary>
+		public ConnectionSettings(
+			IConnectionPool connectionPool,
+			IConnection connection,
+			SourceSerializerFactory sourceSerializer,
+			IPropertyMappingProvider propertyMappingProvider,
+			OpenSearchSerializerEngine serializerEngine
+		) : base(connectionPool, connection, sourceSerializer, propertyMappingProvider, serializerEngine) { }
 	}
 
 	/// <inheritdoc cref="IConnectionSettingsValues" />
@@ -115,14 +129,35 @@ namespace OpenSearch.Client
 		private Func<string, string> _defaultFieldNameInferrer;
 		private string _defaultIndex;
 
+		/// <summary>
+		/// EXPERIMENTAL / TRANSITIONAL (see GitHub issue #388): the resolved built-in serializer engine.
+		/// Set from the constructor before the serializers are created, and read by
+		/// <see cref="CreateDefaultRequestResponseSerializer"/> / <see cref="CreateDefaultSourceSerializer"/>.
+		/// </summary>
+		private readonly OpenSearchSerializerEngine _serializerEngine;
+
 		protected ConnectionSettingsBase(
 			IConnectionPool connectionPool,
 			IConnection connection,
 			ConnectionSettings.SourceSerializerFactory sourceSerializerFactory,
 			IPropertyMappingProvider propertyMappingProvider
 		)
+			: this(connectionPool, connection, sourceSerializerFactory, propertyMappingProvider, OpenSearchSerializerEngine.Default) { }
+
+		protected ConnectionSettingsBase(
+			IConnectionPool connectionPool,
+			IConnection connection,
+			ConnectionSettings.SourceSerializerFactory sourceSerializerFactory,
+			IPropertyMappingProvider propertyMappingProvider,
+			OpenSearchSerializerEngine serializerEngine
+		)
 			: base(connectionPool, connection, null)
 		{
+			// Resolved before the serializers are constructed below (the base ctor builds them eagerly, so a
+			// post-construction fluent setter would be too late). Default resolves via the
+			// OPENSEARCH_NET_SERIALIZER environment variable, enabling a both-engines CI matrix.
+			_serializerEngine = OpenSearchSerializerEngineResolver.Resolve(serializerEngine);
+
 			var defaultSerializer = CreateDefaultRequestResponseSerializer();
 			var sourceSerializer = sourceSerializerFactory?.Invoke(defaultSerializer, this) ?? CreateDefaultSourceSerializer();
 			var serializerAsMappingProvider = sourceSerializer as IPropertyMappingProvider;
@@ -148,7 +183,9 @@ namespace OpenSearch.Client
 		/// </para>
 		/// </summary>
 		protected virtual IOpenSearchSerializer CreateDefaultRequestResponseSerializer() =>
-			new SystemTextJsonSerializer(SystemTextJsonOptionsFactory.Create(this));
+			_serializerEngine == OpenSearchSerializerEngine.Utf8Json
+				? new DefaultHighLevelSerializer(new OpenSearchClientFormatterResolver(this))
+				: new SystemTextJsonSerializer(SystemTextJsonOptionsFactory.Create(this));
 
 		/// <summary>
 		/// Creates the default source serializer used to (de)serialize document bodies when no
@@ -157,7 +194,9 @@ namespace OpenSearch.Client
 		/// property mappings and mapping attributes); see GitHub issue #388.
 		/// </summary>
 		protected virtual IOpenSearchSerializer CreateDefaultSourceSerializer() =>
-			new SystemTextJsonSerializer(SystemTextJsonOptionsFactory.CreateForSource(this));
+			_serializerEngine == OpenSearchSerializerEngine.Utf8Json
+				? new DefaultHighLevelSerializer(new OpenSearchClientFormatterResolver(this))
+				: new SystemTextJsonSerializer(SystemTextJsonOptionsFactory.CreateForSource(this));
 
 		bool IConnectionSettingsValues.DefaultDisableIdInference => _defaultDisableAllInference;
 		Func<string, string> IConnectionSettingsValues.DefaultFieldNameInferrer => _defaultFieldNameInferrer;
